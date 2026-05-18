@@ -1,0 +1,361 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  HR_ADMIN
+  MANAGER
+  VIEWER
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+enum AttendanceEventType {
+  CHECK_IN
+  CHECK_OUT
+}
+
+enum AttendanceEventSource {
+  LIVE
+  OFFLINE_SYNC
+  SEEDED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  HALF_DAY
+  ON_LEAVE
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  OFFICIAL
+  OTHER
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationSeverity {
+  INFO
+  SUCCESS
+  WARNING
+  CRITICAL
+}
+
+enum NotificationStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum AnomalyType {
+  UNKNOWN_CARD
+  DEVICE_OFFLINE
+  MISSED_CHECKOUT
+  OUT_OF_SHIFT
+  RAPID_REENTRY
+  MULTI_DEVICE_CONFLICT
+  EXCESSIVE_LATENESS
+}
+
+enum CorrectionRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  APPLIED
+}
+
+enum EnrollmentStatus {
+  PENDING
+  ASSIGNED
+  DISMISSED
+}
+
+enum DeviceMode {
+  ENTRY_EXIT
+  ENTRY_ONLY
+  EXIT_ONLY
+}
+
+model User {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  passwordHash    String
+  role            UserRole  @default(HR_ADMIN)
+  resetTokenHash  String?
+  resetTokenExpiry DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  leaveRequestsCreated LeaveRequest[] @relation("LeaveRequestCreatedBy")
+  leaveRequestsManagerReviewed LeaveRequest[] @relation("LeaveRequestManagerReviewedBy")
+  leaveRequestsReviewed LeaveRequest[] @relation("LeaveRequestReviewedBy")
+  correctionRequestsCreated AttendanceCorrection[] @relation("CorrectionCreatedBy")
+  correctionRequestsManagerReviewed AttendanceCorrection[] @relation("CorrectionManagerReviewedBy")
+  correctionRequestsReviewed AttendanceCorrection[] @relation("CorrectionReviewedBy")
+  enrollmentAssignments EnrollmentScan[] @relation("EnrollmentAssignedBy")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actorEmail  String?
+  action      String
+  entityType  String
+  entityId    String?
+  details     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([entityType, createdAt])
+}
+
+model Department {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+  createdAt DateTime   @default(now())
+}
+
+model Employee {
+  id           String          @id @default(cuid())
+  employeeNo   String          @unique
+  firstName    String
+  lastName     String
+  email        String?         @unique
+  phone        String?
+  rfidUid      String          @unique
+  status       EmployeeStatus  @default(ACTIVE)
+  departmentId String?
+  department   Department?     @relation(fields: [departmentId], references: [id])
+  shiftId      String?
+  shift        Shift?          @relation(fields: [shiftId], references: [id])
+  events       AttendanceEvent[]
+  timesheets   Timesheet[]
+  leaveRequests LeaveRequest[]
+  notifications Notification[]
+  anomalies     AttendanceAnomaly[]
+  corrections   AttendanceCorrection[]
+  enrollmentScans EnrollmentScan[] @relation("EnrollmentAssignedEmployee")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([rfidUid])
+  @@index([departmentId])
+}
+
+model Shift {
+  id             String     @id @default(cuid())
+  name           String     @unique
+  startTime      String     // HH:mm, e.g. 08:00
+  endTime        String     // HH:mm, e.g. 17:00
+  graceMinutes   Int        @default(15)
+  expectedMinutes Int       @default(480)
+  halfDayMinutes Int        @default(240)
+  overtimeAfterMinutes Int  @default(540)
+  missedCheckoutGraceMinutes Int @default(180)
+  weekendAttendanceEnabled Boolean @default(false)
+  employees      Employee[]
+  createdAt      DateTime   @default(now())
+}
+
+model Device {
+  id               String    @id @default(cuid())
+  deviceCode       String    @unique
+  name             String
+  location         String?
+  mode             DeviceMode @default(ENTRY_EXIT)
+  secretHash       String?
+  isActive         Boolean   @default(true)
+  firmwareVersion  String?
+  lastIpAddress    String?
+  lastRssi         Int?
+  lastBootAt       DateTime?
+  lastSeenAt       DateTime?
+  lastSyncAt       DateTime?
+  lastErrorAt      DateTime?
+  lastErrorMessage String?
+  lastPayload      Json?
+  events           AttendanceEvent[]
+  notifications    Notification[]
+  anomalies        AttendanceAnomaly[]
+  enrollmentScans  EnrollmentScan[]
+  createdAt        DateTime  @default(now())
+
+  @@index([isActive, lastSeenAt])
+}
+
+model AttendanceEvent {
+  id             String                @id @default(cuid())
+  employeeId     String
+  employee       Employee              @relation(fields: [employeeId], references: [id])
+  deviceId       String?
+  device         Device?               @relation(fields: [deviceId], references: [id])
+  type           AttendanceEventType
+  source         AttendanceEventSource @default(LIVE)
+  occurredAt     DateTime              @default(now())
+  rfidUid        String
+  idempotencyKey String?
+  syncBatchId    String?
+  rawPayload     Json?
+  anomalies      AttendanceAnomaly[]
+  createdAt      DateTime              @default(now())
+
+  @@index([employeeId, occurredAt])
+  @@index([deviceId, occurredAt])
+  @@index([rfidUid])
+  @@index([idempotencyKey])
+}
+
+model Timesheet {
+  id             String           @id @default(cuid())
+  employeeId     String
+  employee       Employee         @relation(fields: [employeeId], references: [id])
+  date           DateTime
+  firstCheckIn   DateTime?
+  lastCheckOut   DateTime?
+  workedMinutes  Int              @default(0)
+  lateMinutes    Int              @default(0)
+  status         AttendanceStatus @default(ABSENT)
+  notes          String?
+  corrections    AttendanceCorrection[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model LeaveRequest {
+  id               String             @id @default(cuid())
+  employeeId       String
+  employee         Employee           @relation(fields: [employeeId], references: [id])
+  type             LeaveType
+  startDate        DateTime
+  endDate          DateTime
+  reason           String
+  status           LeaveRequestStatus @default(PENDING)
+  createdByUserId  String?
+  createdByUser    User?              @relation("LeaveRequestCreatedBy", fields: [createdByUserId], references: [id])
+  managerReviewedByUserId String?
+  managerReviewedByUser User?         @relation("LeaveRequestManagerReviewedBy", fields: [managerReviewedByUserId], references: [id])
+  managerReviewedAt DateTime?
+  managerReviewNotes String?
+  reviewedByUserId String?
+  reviewedByUser   User?              @relation("LeaveRequestReviewedBy", fields: [reviewedByUserId], references: [id])
+  reviewedAt       DateTime?
+  reviewNotes      String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([employeeId, startDate, endDate])
+  @@index([status, startDate])
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  title       String
+  message     String
+  severity    NotificationSeverity @default(INFO)
+  status      NotificationStatus @default(OPEN)
+  employeeId  String?
+  employee    Employee?          @relation(fields: [employeeId], references: [id])
+  deviceId    String?
+  device      Device?            @relation(fields: [deviceId], references: [id])
+  anomalyId   String?            @unique
+  anomaly     AttendanceAnomaly? @relation(fields: [anomalyId], references: [id])
+  metadata    Json?
+  createdAt   DateTime           @default(now())
+  resolvedAt  DateTime?
+
+  @@index([status, createdAt])
+  @@index([employeeId, status])
+  @@index([deviceId, status])
+}
+
+model AttendanceAnomaly {
+  id          String      @id @default(cuid())
+  type        AnomalyType
+  title       String
+  description String
+  employeeId  String?
+  employee    Employee?   @relation(fields: [employeeId], references: [id])
+  deviceId    String?
+  device      Device?     @relation(fields: [deviceId], references: [id])
+  eventId     String?
+  event       AttendanceEvent? @relation(fields: [eventId], references: [id])
+  metadata    Json?
+  detectedAt  DateTime    @default(now())
+  resolvedAt  DateTime?
+  notification Notification?
+
+  @@index([type, detectedAt])
+  @@index([employeeId, detectedAt])
+  @@index([deviceId, detectedAt])
+}
+
+model AttendanceCorrection {
+  id                 String                  @id @default(cuid())
+  employeeId         String
+  employee           Employee                @relation(fields: [employeeId], references: [id])
+  timesheetId        String?
+  timesheet          Timesheet?              @relation(fields: [timesheetId], references: [id])
+  date               DateTime
+  requestedCheckIn   DateTime?
+  requestedCheckOut  DateTime?
+  reason             String
+  status             CorrectionRequestStatus @default(PENDING)
+  requestedByUserId  String?
+  requestedByUser    User?                   @relation("CorrectionCreatedBy", fields: [requestedByUserId], references: [id])
+  managerReviewedByUserId String?
+  managerReviewedByUser User?                @relation("CorrectionManagerReviewedBy", fields: [managerReviewedByUserId], references: [id])
+  managerReviewedAt  DateTime?
+  managerReviewNotes String?
+  reviewedByUserId   String?
+  reviewedByUser     User?                   @relation("CorrectionReviewedBy", fields: [reviewedByUserId], references: [id])
+  reviewedAt         DateTime?
+  appliedAt          DateTime?
+  reviewNotes        String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@index([employeeId, date])
+  @@index([status, createdAt])
+}
+
+model EnrollmentScan {
+  id               String           @id @default(cuid())
+  uid              String
+  deviceId         String?
+  device           Device?          @relation(fields: [deviceId], references: [id])
+  status           EnrollmentStatus @default(PENDING)
+  rawPayload       Json?
+  notes            String?
+  assignedEmployeeId String?
+  assignedEmployee Employee?        @relation("EnrollmentAssignedEmployee", fields: [assignedEmployeeId], references: [id])
+  assignedByUserId String?
+  assignedByUser   User?            @relation("EnrollmentAssignedBy", fields: [assignedByUserId], references: [id])
+  scannedAt        DateTime         @default(now())
+  assignedAt       DateTime?
+  createdAt        DateTime         @default(now())
+
+  @@index([uid, scannedAt])
+  @@index([status, scannedAt])
+}

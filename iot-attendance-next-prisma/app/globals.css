@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+html { min-height: 100%; }
+body {
+  @apply bg-slate-50 text-slate-950 antialiased;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.10), transparent 28%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.10), transparent 24%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.86), rgba(241, 245, 249, 0.98));
+}
+a { @apply text-brand-700 hover:text-brand-500; }
+::selection {
+  background: rgba(37, 99, 235, 0.18);
+}
