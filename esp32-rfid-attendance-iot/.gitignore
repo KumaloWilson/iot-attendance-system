@@ -1,0 +1,20 @@
+# Device-specific secrets — copy config.example.h → config.h and fill in your values
+config.h
+
+# Arduino IDE / arduino-cli build output
+build/
+*.elf
+*.bin
+*.hex
+*.map
+*.eep
+
+# Arduino IDE cache & preferences
+.arduino15/
+.arduinoIDE/
+
+# PlatformIO (if ever migrated)
+.pio/
+.pioenvs/
+.piolibdeps/
+.clang_format

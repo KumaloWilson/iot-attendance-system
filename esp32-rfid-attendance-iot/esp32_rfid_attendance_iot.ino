@@ -7,6 +7,7 @@
 #include <Wire.h>
 #include <hd44780.h>
 #include <hd44780ioClass/hd44780_I2Cexp.h>
+#include <time.h>
 #include "config.h"
 
 /*
@@ -51,35 +52,63 @@ String lastUid = "";
 unsigned long lastScanTime = 0;
 bool lcdReady = false;
 bool enrollmentMode = false;
+unsigned long enrollmentModeStartMs = 0;
+unsigned long lastSyncAttemptMs = 0;
+unsigned long deviceBootEpoch = 0;  // epoch seconds at boot (0 if NTP unavailable)
+
+#define ENROLLMENT_TIMEOUT_MS 30000
+#define SYNC_INTERVAL_MS 30000
 
 struct OfflineEvent {
   String uid;
   String idempotencyKey;
   String syncBatchId;
+  unsigned long occurredAtEpoch;  // Unix epoch seconds (from NTP or 0 if unavailable)
+  String occurredAtIso;           // ISO-8601 string built at scan time
 };
 
 OfflineEvent offlineQueue[OFFLINE_QUEUE_SIZE];
 int offlineQueueCount = 0;
 
+void syncNtp() {
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo, 5000)) {
+    deviceBootEpoch = mktime(&timeinfo) - (millis() / 1000);
+    Serial.println("NTP sync OK.");
+  } else {
+    Serial.println("NTP sync failed — timestamps will be approximate.");
+  }
+}
+
+String nowIso() {
+  if (deviceBootEpoch == 0) return "";
+  unsigned long epochNow = deviceBootEpoch + (millis() / 1000);
+  struct tm *t = gmtime((time_t *)&epochNow);
+  char buf[25];
+  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", t);
+  return String(buf);
+}
+
 String serializeOfflineEvent(const OfflineEvent &event) {
-  return event.uid + "|" + event.idempotencyKey + "|" + event.syncBatchId;
+  return event.uid + "|" + event.idempotencyKey + "|" + event.syncBatchId + "|" + event.occurredAtIso;
 }
 
 OfflineEvent deserializeOfflineEvent(const String &value) {
   OfflineEvent event;
-  int firstSep = value.indexOf('|');
-  int secondSep = value.indexOf('|', firstSep + 1);
+  int sep1 = value.indexOf('|');
+  int sep2 = value.indexOf('|', sep1 + 1);
+  int sep3 = value.indexOf('|', sep2 + 1);
 
-  if (firstSep < 0 || secondSep < 0) {
+  if (sep1 < 0 || sep2 < 0) {
     event.uid = value;
-    event.idempotencyKey = "";
-    event.syncBatchId = "";
     return event;
   }
 
-  event.uid = value.substring(0, firstSep);
-  event.idempotencyKey = value.substring(firstSep + 1, secondSep);
-  event.syncBatchId = value.substring(secondSep + 1);
+  event.uid = value.substring(0, sep1);
+  event.idempotencyKey = value.substring(sep1 + 1, sep2);
+  event.syncBatchId = sep3 >= 0 ? value.substring(sep2 + 1, sep3) : value.substring(sep2 + 1);
+  event.occurredAtIso = sep3 >= 0 ? value.substring(sep3 + 1) : "";
   return event;
 }
 
@@ -261,7 +290,7 @@ bool postAttendanceTap(const OfflineEvent &event, bool isOfflineSync, DynamicJso
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-device-secret", DEVICE_SECRET);
 
-  StaticJsonDocument<384> requestDoc;
+  StaticJsonDocument<512> requestDoc;
   requestDoc["uid"] = event.uid;
   requestDoc["deviceCode"] = DEVICE_CODE;
   requestDoc["firmwareVersion"] = FIRMWARE_VERSION;
@@ -269,6 +298,20 @@ bool postAttendanceTap(const OfflineEvent &event, bool isOfflineSync, DynamicJso
   requestDoc["signalStrength"] = WiFi.RSSI();
   requestDoc["source"] = isOfflineSync ? "OFFLINE_SYNC" : "LIVE";
   requestDoc["idempotencyKey"] = event.idempotencyKey;
+
+  // Send exact scan time so the server uses it instead of receipt time
+  if (event.occurredAtIso.length() > 0) {
+    requestDoc["occurredAt"] = event.occurredAtIso;
+  }
+
+  // Send device boot time for telemetry
+  if (deviceBootEpoch > 0) {
+    unsigned long bootEpoch = deviceBootEpoch;
+    struct tm *bt = gmtime((time_t *)&bootEpoch);
+    char bootBuf[25];
+    strftime(bootBuf, sizeof(bootBuf), "%Y-%m-%dT%H:%M:%SZ", bt);
+    requestDoc["bootedAt"] = String(bootBuf);
+  }
 
   if (isOfflineSync && event.syncBatchId.length() > 0) {
     requestDoc["syncBatchId"] = event.syncBatchId;
@@ -395,7 +438,8 @@ void checkSerialCommands() {
 
   if (command == "enroll") {
     enrollmentMode = true;
-    Serial.println("Enrollment mode enabled for the next card.");
+    enrollmentModeStartMs = millis();
+    Serial.println("Enrollment mode enabled for the next card (30s timeout).");
     showMessage("Enrollment Mode", "Scan new card");
     return;
   }
@@ -527,7 +571,10 @@ void setup() {
 
   preferences.begin(PREFERENCES_NAMESPACE, false);
   loadOfflineQueue();
-  connectWiFi();
+
+  if (connectWiFi()) {
+    syncNtp();
+  }
 
   showMessage("Scan Your Card", "Ready...");
   beep(2, 80, 80);
@@ -535,7 +582,22 @@ void setup() {
 
 void loop() {
   checkSerialCommands();
-  syncOfflineQueue();
+
+  // Throttle offline sync to avoid hammering the server every loop tick
+  unsigned long now = millis();
+  if (offlineQueueCount > 0 && (now - lastSyncAttemptMs) >= SYNC_INTERVAL_MS) {
+    lastSyncAttemptMs = now;
+    syncOfflineQueue();
+  }
+
+  // Enrollment mode auto-cancel after timeout
+  if (enrollmentMode && (now - enrollmentModeStartMs) >= ENROLLMENT_TIMEOUT_MS) {
+    enrollmentMode = false;
+    Serial.println("Enrollment mode timed out — reverting to attendance mode.");
+    showMessage("Enroll Timeout", "Attendance Mode");
+    delay(1200);
+    showMessage("Scan Your Card", "Ready...");
+  }
 
   if (!rfid.PICC_IsNewCardPresent()) return;
   if (!rfid.PICC_ReadCardSerial()) return;
@@ -562,6 +624,7 @@ void loop() {
   event.uid = uid;
   event.idempotencyKey = buildIdempotencyKey(uid);
   event.syncBatchId = "";
+  event.occurredAtIso = nowIso();  // capture exact scan timestamp
 
   if (enrollmentMode) {
     DynamicJsonDocument enrollmentDoc(512);
