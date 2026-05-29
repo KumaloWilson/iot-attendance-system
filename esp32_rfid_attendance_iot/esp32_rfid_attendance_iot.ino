@@ -125,7 +125,9 @@ void persistOfflineQueue() {
 }
 
 void loadOfflineQueue() {
-  offlineQueueCount = min(preferences.getInt("queueCount", 0), OFFLINE_QUEUE_SIZE);
+  offlineQueueCount = preferences.getInt("queueCount", 0);
+  if (offlineQueueCount < 0) offlineQueueCount = 0;
+  if (offlineQueueCount > OFFLINE_QUEUE_SIZE) offlineQueueCount = OFFLINE_QUEUE_SIZE;
   for (int i = 0; i < offlineQueueCount; i++) {
     String key = "queue" + String(i);
     offlineQueue[i] = deserializeOfflineEvent(preferences.getString(key.c_str(), ""));
@@ -288,6 +290,7 @@ bool postAttendanceTap(const OfflineEvent &event, bool isOfflineSync, DynamicJso
   http.begin(API_URL);
   http.setTimeout(API_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("x-api-key", IOT_API_KEY);
   http.addHeader("x-device-secret", DEVICE_SECRET);
 
   StaticJsonDocument<512> requestDoc;
@@ -395,6 +398,7 @@ bool postEnrollmentScan(const String &uid, DynamicJsonDocument &responseDoc, int
   http.begin(ENROLLMENT_API_URL);
   http.setTimeout(API_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("x-api-key", IOT_API_KEY);
   http.addHeader("x-device-secret", DEVICE_SECRET);
 
   StaticJsonDocument<256> requestDoc;
