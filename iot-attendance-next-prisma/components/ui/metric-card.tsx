@@ -9,22 +9,67 @@ export function MetricCard({
   label: string;
   value: React.ReactNode;
   detail?: React.ReactNode;
-  accent?: "blue" | "emerald" | "amber" | "rose" | "slate";
+  accent?: "blue" | "gold" | "emerald" | "amber" | "rose" | "slate";
 }) {
   const accents = {
-    blue: "from-sky-50 to-white text-brand-700 ring-sky-200",
-    emerald: "from-emerald-50 to-white text-emerald-700 ring-emerald-200",
-    amber: "from-amber-50 to-white text-amber-700 ring-amber-200",
-    rose: "from-rose-50 to-white text-rose-700 ring-rose-200",
-    slate: "from-slate-100 to-white text-slate-700 ring-slate-200"
+    blue: {
+      wrapper: "border-brand-100 bg-white",
+      bar: "bg-brand-700",
+      label: "text-brand-700",
+      value: "text-slate-950",
+      indicator: "bg-brand-100"
+    },
+    gold: {
+      wrapper: "border-gold-200 bg-white",
+      bar: "bg-gold-500",
+      label: "text-gold-700",
+      value: "text-slate-950",
+      indicator: "bg-gold-100"
+    },
+    emerald: {
+      wrapper: "border-emerald-100 bg-white",
+      bar: "bg-emerald-600",
+      label: "text-emerald-700",
+      value: "text-slate-950",
+      indicator: "bg-emerald-100"
+    },
+    amber: {
+      wrapper: "border-amber-100 bg-white",
+      bar: "bg-amber-500",
+      label: "text-amber-700",
+      value: "text-slate-950",
+      indicator: "bg-amber-100"
+    },
+    rose: {
+      wrapper: "border-rose-100 bg-white",
+      bar: "bg-rose-600",
+      label: "text-rose-700",
+      value: "text-slate-950",
+      indicator: "bg-rose-100"
+    },
+    slate: {
+      wrapper: "border-slate-200 bg-white",
+      bar: "bg-slate-400",
+      label: "text-slate-500",
+      value: "text-slate-950",
+      indicator: "bg-slate-100"
+    }
   } as const;
 
+  const style = accents[accent];
+
   return (
-    <div className={clsx("rounded-[1.6rem] bg-gradient-to-br p-[1px] shadow-[0_20px_60px_-35px_rgba(15,23,42,0.35)] ring-1", accents[accent])}>
-      <div className="rounded-[calc(1.6rem-1px)] bg-white/95 px-5 py-5">
-        <p className="text-xs font-bold uppercase tracking-[0.28em] text-slate-500">{label}</p>
-        <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">{value}</p>
-        {detail ? <p className="mt-2 text-sm text-slate-500">{detail}</p> : null}
+    <div className={clsx("relative overflow-hidden rounded-2xl border p-5 shadow-sm", style.wrapper)}>
+      {/* Left accent bar */}
+      <div className={clsx("absolute left-0 top-0 h-full w-1 rounded-l-2xl", style.bar)} />
+      <div className="pl-3">
+        <p className={clsx("text-[10px] font-bold uppercase tracking-[0.25em]", style.label)}>
+          {label}
+        </p>
+        <p className={clsx("mt-2.5 text-3xl font-black tracking-tight", style.value)}>{value}</p>
+        {detail ? (
+          <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{detail}</p>
+        ) : null}
       </div>
     </div>
   );

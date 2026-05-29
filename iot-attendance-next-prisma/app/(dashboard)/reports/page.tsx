@@ -1,4 +1,4 @@
-import { endOfMonth, startOfMonth } from "date-fns";
+import { endOfMonth, format, startOfMonth, subMonths, addMonths } from "date-fns";
 import { Card } from "@/components/ui/card";
 import { MetricCard } from "@/components/ui/metric-card";
 import { PageHero } from "@/components/ui/page-hero";
@@ -12,9 +12,20 @@ import { countPresentStatuses, ensureTimesheetsForRange } from "@/lib/reporting"
 
 export const dynamic = "force-dynamic";
 
-export default async function ReportsPage() {
-  const start = startOfMonth(new Date());
-  const end = endOfMonth(new Date());
+export default async function ReportsPage({
+  searchParams
+}: {
+  searchParams: { month?: string };
+}) {
+  const monthParam = searchParams.month;
+  const monthDate = monthParam ? new Date(`${monthParam}-01`) : new Date();
+  const start = startOfMonth(monthDate);
+  const end = endOfMonth(monthDate);
+  const prevMonth = format(subMonths(start, 1), "yyyy-MM");
+  const nextMonth = format(addMonths(start, 1), "yyyy-MM");
+  const currentMonth = format(new Date(), "yyyy-MM");
+  const displayMonth = format(start, "yyyy-MM");
+  const isCurrentMonth = displayMonth === currentMonth;
 
   const employees = await ensureTimesheetsForRange(start, end);
   const [timesheets, devices, anomalies, events, notifications] = await Promise.all([
@@ -51,6 +62,7 @@ export default async function ReportsPage() {
       department: string;
       workedMinutes: number;
       lateMinutes: number;
+      overtimeMinutes: number;
       absentDays: number;
       lateDays: number;
     }>>((acc, row) => {
@@ -60,11 +72,13 @@ export default async function ReportsPage() {
         department: row.employee.department?.name ?? "Unassigned",
         workedMinutes: 0,
         lateMinutes: 0,
+        overtimeMinutes: 0,
         absentDays: 0,
         lateDays: 0
       };
       acc[row.employeeId].workedMinutes += row.workedMinutes;
       acc[row.employeeId].lateMinutes += row.lateMinutes;
+      acc[row.employeeId].overtimeMinutes += calculateOvertimeMinutes(row.employee.shift, row.workedMinutes);
       if (row.status === "ABSENT") acc[row.employeeId].absentDays += 1;
       if (row.status === "LATE") acc[row.employeeId].lateDays += 1;
       return acc;
@@ -126,19 +140,40 @@ export default async function ReportsPage() {
       <PageHero
         eyebrow="Analytics"
         title="Monthly Reports"
-        description="Roll-up metrics for attendance performance, punctuality, overtime exposure, alert aging, and device reliability."
+        description={`Roll-up metrics for ${format(start, "MMMM yyyy")} — attendance performance, punctuality, overtime exposure, alert aging, and device reliability.`}
         aside={
           <div className="flex flex-wrap justify-start gap-3 lg:justify-end">
             <a
-              href={`/api/reports/summary?month=${new Date().toISOString().slice(0, 7)}&format=csv`}
+              href={`/reports?month=${prevMonth}`}
               className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900"
             >
-              Export current month CSV
+              ← Prev month
+            </a>
+            {!isCurrentMonth && (
+              <a
+                href={`/reports?month=${nextMonth}`}
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900"
+              >
+                Next month →
+              </a>
+            )}
+            <a
+              href={`/api/reports/summary?month=${displayMonth}&format=csv`}
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900"
+            >
+              Export CSV
             </a>
             <PrintButton />
           </div>
         }
       />
+
+      {/* Period navigation */}
+      <div className="flex gap-2 text-sm font-semibold">
+        <a href="/reports/daily" className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50">Daily</a>
+        <a href="/reports/weekly" className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50">Weekly</a>
+        <a href="/reports" className="rounded-lg bg-brand-700 px-4 py-2 text-white">Monthly</a>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Active employees" value={employees.length} accent="slate" />
@@ -182,6 +217,7 @@ export default async function ReportsPage() {
                   <th className="py-2">Employee</th>
                   <th>Department</th>
                   <th>Worked</th>
+                  <th>Overtime</th>
                   <th>Late mins</th>
                   <th>Late days</th>
                   <th>Absent days</th>
@@ -193,7 +229,10 @@ export default async function ReportsPage() {
                     <td className="py-3 font-semibold">{row.name}</td>
                     <td>{row.department}</td>
                     <td>{formatMinutes(row.workedMinutes)}</td>
-                    <td>{row.lateMinutes}</td>
+                    <td className={row.overtimeMinutes > 0 ? "text-blue-600 font-semibold" : "text-slate-400"}>
+                      {row.overtimeMinutes > 0 ? formatMinutes(row.overtimeMinutes) : "—"}
+                    </td>
+                    <td className={row.lateMinutes > 0 ? "text-amber-600" : ""}>{row.lateMinutes > 0 ? row.lateMinutes : "—"}</td>
                     <td>{row.lateDays}</td>
                     <td>{row.absentDays}</td>
                   </tr>

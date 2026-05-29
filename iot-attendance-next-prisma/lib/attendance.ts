@@ -1,12 +1,15 @@
 import {
   AttendanceEventSource,
   AttendanceEventType,
+  AttendanceStatus,
   DeviceMode,
   EmployeeStatus,
-  Prisma
+  Prisma,
+  UserRole
 } from "@prisma/client";
 import { endOfDay, format, startOfDay, subDays } from "date-fns";
 import { evaluateTimesheet, shouldTrackAttendanceForDate } from "@/lib/attendance-policy";
+import { sendLateCheckInEmail } from "@/lib/email";
 import {
   createUnknownCardAlert,
   detectEventAnomalies,
@@ -292,6 +295,10 @@ export async function handleIotAttendanceTap(input: AttendanceTapInput): Promise
   await recalculateTimesheet(employee.id, occurredAt);
   await detectEventAnomalies(event.id);
 
+  if (decision.type === AttendanceEventType.CHECK_IN) {
+    void dispatchLateCheckInEmail(employee.id, occurredAt);
+  }
+
   return successResult(
     decision.type === AttendanceEventType.CHECK_IN ? "CHECK_IN_RECORDED" : "CHECK_OUT_RECORDED",
     employee,
@@ -299,6 +306,37 @@ export async function handleIotAttendanceTap(input: AttendanceTapInput): Promise
     decision.type === AttendanceEventType.CHECK_IN ? "Checked in" : "Checked out",
     { action: decision.type, eventId: event.id, createdEvent: true }
   );
+}
+
+async function dispatchLateCheckInEmail(employeeId: string, checkInTime: Date) {
+  try {
+    const [timesheet, supervisors] = await Promise.all([
+      prisma.timesheet.findUnique({
+        where: { employeeId_date: { employeeId, date: startOfDay(checkInTime) } },
+        include: { employee: { include: { shift: true, department: true } } }
+      }),
+      prisma.user.findMany({
+        where: { role: { in: [UserRole.MANAGER, UserRole.HR_ADMIN, UserRole.SUPER_ADMIN] } },
+        select: { email: true }
+      })
+    ]);
+
+    if (!timesheet || timesheet.status !== AttendanceStatus.LATE || timesheet.lateMinutes <= 0) return;
+
+    await sendLateCheckInEmail({
+      employeeName: `${timesheet.employee.firstName} ${timesheet.employee.lastName}`,
+      employeeNo: timesheet.employee.employeeNo,
+      employeeEmail: timesheet.employee.email ?? null,
+      department: timesheet.employee.department?.name ?? "Unassigned",
+      shiftName: timesheet.employee.shift?.name ?? "Default",
+      shiftStart: timesheet.employee.shift?.startTime ?? "N/A",
+      checkInTime,
+      lateMinutes: timesheet.lateMinutes,
+      supervisorEmails: supervisors.map((u) => u.email)
+    });
+  } catch (err) {
+    console.error("[attendance] Failed to send late check-in email:", err);
+  }
 }
 
 export async function recalculateTimesheet(employeeId: string, date: Date) {

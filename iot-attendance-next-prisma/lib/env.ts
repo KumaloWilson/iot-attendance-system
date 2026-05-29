@@ -7,7 +7,13 @@ const envSchema = z.object({
   APP_BASE_URL: z.string().url(),
   IOT_API_KEY: z.string().min(8).optional().default(""),
   DEFAULT_IOT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().optional().default(60_000),
-  DEFAULT_IOT_RATE_LIMIT_MAX: z.coerce.number().int().positive().optional().default(30)
+  DEFAULT_IOT_RATE_LIMIT_MAX: z.coerce.number().int().positive().optional().default(30),
+  SMTP_HOST: z.string().optional().default(""),
+  SMTP_PORT: z.coerce.number().int().positive().optional().default(587),
+  SMTP_SECURE: z.string().optional().transform((v) => v === "true").default("false"),
+  SMTP_USER: z.string().optional().default(""),
+  SMTP_PASS: z.string().optional().default(""),
+  SMTP_FROM: z.string().optional().default("IoT Attendance <no-reply@attendance.local>")
 });
 
 let cachedEnv: z.infer<typeof envSchema> | null = null;

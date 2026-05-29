@@ -2,17 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light; }
+:root {
+  color-scheme: light;
+  --brand-navy: #003087;
+  --brand-gold: #FFB81C;
+  --brand-dark: #001240;
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+}
+
 html { min-height: 100%; }
+
 body {
   @apply bg-slate-50 text-slate-950 antialiased;
   min-height: 100vh;
   background-image:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.10), transparent 28%),
-    radial-gradient(circle at top right, rgba(14, 165, 233, 0.10), transparent 24%),
-    linear-gradient(180deg, rgba(248, 250, 252, 0.86), rgba(241, 245, 249, 0.98));
+    radial-gradient(ellipse at top left, rgba(0, 48, 135, 0.07), transparent 40%),
+    radial-gradient(ellipse at bottom right, rgba(255, 184, 28, 0.05), transparent 36%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.95), rgba(241, 245, 249, 1));
 }
-a { @apply text-brand-700 hover:text-brand-500; }
+
+a { @apply text-brand-700 hover:text-brand-600 transition-colors; }
+
 ::selection {
-  background: rgba(37, 99, 235, 0.18);
+  background: rgba(0, 48, 135, 0.15);
+  color: #001240;
+}
+
+/* Scrollbar styling for enterprise look */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Table hover rows */
+.table-row-hover tbody tr {
+  @apply transition-colors duration-100;
+}
+.table-row-hover tbody tr:hover {
+  @apply bg-brand-50/60;
+}
+
+/* Status badge base */
+.badge {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset;
+}
+
+/* Focus ring in brand color */
+*:focus-visible {
+  outline: 2px solid var(--brand-gold);
+  outline-offset: 2px;
 }

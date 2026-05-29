@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/audit";
+import { sendPasswordResetEmail } from "@/lib/email";
 import { getEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { createResetToken } from "@/lib/password";
@@ -27,6 +28,6 @@ export async function POST(request: Request) {
   });
 
   const resetUrl = `${getEnv().APP_BASE_URL}/reset-password?token=${token}`;
-  console.log("Password reset URL:", resetUrl);
-  return NextResponse.json({ ok: true, resetUrl });
+  await sendPasswordResetEmail(user.email, resetUrl);
+  return NextResponse.json({ ok: true });
 }

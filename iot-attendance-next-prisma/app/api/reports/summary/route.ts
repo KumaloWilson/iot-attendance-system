@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { endOfMonth, startOfMonth } from "date-fns";
 import { UserRole } from "@prisma/client";
 import { requireRole } from "@/lib/authorization";
-import { countPresentStatuses, ensureTimesheetsForRange } from "@/lib/reporting";
+import { calculateOvertimeMinutes } from "@/lib/attendance-policy";
+import { buildTimesheetCsvRows, countPresentStatuses, ensureTimesheetsForRange, toCsv } from "@/lib/reporting";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,11 @@ export async function GET(request: Request) {
     orderBy: { name: "asc" }
   });
 
+  const totalOvertimeMinutes = timesheets.reduce(
+    (sum, t) => sum + calculateOvertimeMinutes(t.employee.shift, t.workedMinutes),
+    0
+  );
+
   const summary = {
     activeEmployees: employees.length,
     presentDays: countPresentStatuses(timesheets),
@@ -45,6 +51,7 @@ export async function GET(request: Request) {
     absentDays: timesheets.filter((t) => t.status === "ABSENT").length,
     totalWorkedMinutes: timesheets.reduce((sum, t) => sum + t.workedMinutes, 0),
     totalLateMinutes: timesheets.reduce((sum, t) => sum + t.lateMinutes, 0),
+    totalOvertimeMinutes,
     completionRate: employees.length === 0 ? 0 : Math.round((countPresentStatuses(timesheets) / timesheets.length) * 100)
   };
 
@@ -54,26 +61,28 @@ export async function GET(request: Request) {
       "employeeNo",
       "employeeName",
       "department",
+      "shift",
       "status",
       "firstCheckIn",
       "lastCheckOut",
       "workedMinutes",
-      "lateMinutes"
+      "lateMinutes",
+      "overtimeMinutes"
     ];
-    const rows = timesheets.map((row) => [
-      row.date.toISOString().slice(0, 10),
-      row.employee.employeeNo,
-      `${row.employee.firstName} ${row.employee.lastName}`,
-      row.employee.department?.name ?? "",
-      row.status,
-      row.firstCheckIn?.toISOString() ?? "",
-      row.lastCheckOut?.toISOString() ?? "",
-      String(row.workedMinutes),
-      String(row.lateMinutes)
+    const rows = buildTimesheetCsvRows(timesheets).map((r) => [
+      r.date,
+      r.employeeNo,
+      r.employeeName,
+      r.department,
+      r.shift,
+      r.status,
+      r.firstCheckIn,
+      r.lastCheckOut,
+      r.workedMinutes,
+      r.lateMinutes,
+      r.overtimeMinutes
     ]);
-    const csv = [headers, ...rows]
-      .map((line) => line.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
-      .join("\n");
+    const csv = toCsv(headers, rows);
 
     return new NextResponse(csv, {
       status: 200,
@@ -83,6 +92,11 @@ export async function GET(request: Request) {
       }
     });
   }
+
+  const enrichedTimesheets = timesheets.map((t) => ({
+    ...t,
+    overtimeMinutes: calculateOvertimeMinutes(t.employee.shift, t.workedMinutes)
+  }));
 
   return NextResponse.json({
     summary,
@@ -96,6 +110,6 @@ export async function GET(request: Request) {
       firmwareVersion: device.firmwareVersion,
       isActive: device.isActive
     })),
-    timesheets
+    timesheets: enrichedTimesheets
   });
 }

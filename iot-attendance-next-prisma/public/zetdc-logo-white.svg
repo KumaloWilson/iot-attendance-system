@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" fill="none">
+  <!-- Lightning bolt icon mark -->
+  <rect x="0" y="0" width="80" height="80" rx="12" fill="rgba(255,255,255,0.12)"/>
+  <!-- Lightning bolt shape -->
+  <polygon points="46,8 28,42 40,42 34,72 56,36 43,36 52,8" fill="#FFB81C"/>
+  <!-- Horizontal accent line -->
+  <rect x="14" y="38" width="8" height="3" rx="1.5" fill="#FFB81C" opacity="0.6"/>
+  <rect x="58" y="38" width="8" height="3" rx="1.5" fill="#FFB81C" opacity="0.6"/>
+
+  <!-- ZETDC text -->
+  <text x="94" y="30" font-family="'Segoe UI', system-ui, -apple-system, sans-serif" font-size="22" font-weight="800" fill="#FFFFFF" letter-spacing="-0.5">ZETDC</text>
+  <!-- Divider -->
+  <rect x="94" y="38" width="220" height="1.5" fill="#FFB81C" rx="1"/>
+  <!-- Full name -->
+  <text x="94" y="56" font-family="'Segoe UI', system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="500" fill="rgba(255,255,255,0.75)" letter-spacing="0.8">ZIMBABWE ELECTRICITY TRANSMISSION</text>
+  <text x="94" y="70" font-family="'Segoe UI', system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="500" fill="rgba(255,255,255,0.75)" letter-spacing="0.8">&amp; DISTRIBUTION COMPANY</text>
+</svg>

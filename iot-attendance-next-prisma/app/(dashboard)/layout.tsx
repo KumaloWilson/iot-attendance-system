@@ -13,7 +13,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const notifications = await getOpenNotifications(5);
 
   return (
-    <div className="flex min-h-screen bg-slate-100/80">
+    <div className="flex min-h-screen bg-slate-50">
       <Sidebar role={(session.user as { role?: string }).role ?? "VIEWER"} />
       <main className="flex-1">
         <AutoRefresh intervalMs={12000} />

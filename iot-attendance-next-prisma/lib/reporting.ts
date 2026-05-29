@@ -6,8 +6,15 @@ import {
   type Shift,
   type Timesheet
 } from "@prisma/client";
-import { eachDayOfInterval, endOfDay, startOfDay } from "date-fns";
-import { shouldTrackAttendanceForDate } from "@/lib/attendance-policy";
+import {
+  eachDayOfInterval,
+  endOfDay,
+  endOfWeek,
+  format,
+  startOfDay,
+  startOfWeek
+} from "date-fns";
+import { calculateOvertimeMinutes, shouldTrackAttendanceForDate } from "@/lib/attendance-policy";
 import { prisma } from "@/lib/prisma";
 import { formatDateKey } from "@/lib/attendance";
 
@@ -90,6 +97,136 @@ export function countPresentStatuses(timesheets: Timesheet[]) {
     row.status === AttendanceStatus.LATE ||
     row.status === AttendanceStatus.HALF_DAY
   ).length;
+}
+
+export function buildTimesheetCsvRows(
+  timesheets: Array<Timesheet & { employee: Employee & { shift: Shift | null; department: { name: string } | null } }>
+) {
+  return timesheets.map((row) => ({
+    date: format(row.date, "yyyy-MM-dd"),
+    employeeNo: row.employee.employeeNo,
+    employeeName: `${row.employee.firstName} ${row.employee.lastName}`,
+    department: row.employee.department?.name ?? "",
+    shift: row.employee.shift?.name ?? "",
+    status: row.status,
+    firstCheckIn: row.firstCheckIn?.toISOString() ?? "",
+    lastCheckOut: row.lastCheckOut?.toISOString() ?? "",
+    workedMinutes: row.workedMinutes,
+    lateMinutes: row.lateMinutes,
+    overtimeMinutes: calculateOvertimeMinutes(row.employee.shift, row.workedMinutes)
+  }));
+}
+
+export function toCsv(headers: string[], rows: (string | number)[][]): string {
+  return [headers, ...rows]
+    .map((line) => line.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(","))
+    .join("\n");
+}
+
+export async function getDailyReportData(date: Date) {
+  const start = startOfDay(date);
+  const end = endOfDay(date);
+
+  await ensureTimesheetsForRange(start, end);
+
+  const timesheets = await prisma.timesheet.findMany({
+    where: { date: start },
+    include: { employee: { include: { department: true, shift: true } } },
+    orderBy: [{ employee: { firstName: "asc" } }]
+  });
+
+  const present = countPresentStatuses(timesheets);
+  const late = timesheets.filter((t) => t.status === AttendanceStatus.LATE).length;
+  const absent = timesheets.filter((t) => t.status === AttendanceStatus.ABSENT).length;
+  const onLeave = timesheets.filter((t) => t.status === AttendanceStatus.ON_LEAVE).length;
+  const totalWorkedMinutes = timesheets.reduce((s, t) => s + t.workedMinutes, 0);
+  const totalLateMinutes = timesheets.reduce((s, t) => s + t.lateMinutes, 0);
+  const totalOvertimeMinutes = timesheets.reduce(
+    (s, t) => s + calculateOvertimeMinutes(t.employee.shift, t.workedMinutes),
+    0
+  );
+
+  return {
+    date: start,
+    summary: { present, late, absent, onLeave, totalWorkedMinutes, totalLateMinutes, totalOvertimeMinutes },
+    rows: buildTimesheetCsvRows(timesheets),
+    timesheets
+  };
+}
+
+export async function getWeeklyReportData(weekStart: Date) {
+  const start = startOfWeek(weekStart, { weekStartsOn: 1 });
+  const end = endOfWeek(weekStart, { weekStartsOn: 1 });
+
+  await ensureTimesheetsForRange(start, end);
+
+  const timesheets = await prisma.timesheet.findMany({
+    where: { date: { gte: start, lte: end } },
+    include: { employee: { include: { department: true, shift: true } } },
+    orderBy: [{ date: "asc" }, { employee: { firstName: "asc" } }]
+  });
+
+  const byEmployee = timesheets.reduce<
+    Record<
+      string,
+      {
+        employeeNo: string;
+        name: string;
+        department: string;
+        presentDays: number;
+        lateDays: number;
+        absentDays: number;
+        workedMinutes: number;
+        lateMinutes: number;
+        overtimeMinutes: number;
+      }
+    >
+  >((acc, row) => {
+    const key = row.employeeId;
+    acc[key] ??= {
+      employeeNo: row.employee.employeeNo,
+      name: `${row.employee.firstName} ${row.employee.lastName}`,
+      department: row.employee.department?.name ?? "Unassigned",
+      presentDays: 0,
+      lateDays: 0,
+      absentDays: 0,
+      workedMinutes: 0,
+      lateMinutes: 0,
+      overtimeMinutes: 0
+    };
+    if (row.status === AttendanceStatus.PRESENT || row.status === AttendanceStatus.LATE || row.status === AttendanceStatus.HALF_DAY) {
+      acc[key].presentDays += 1;
+    }
+    if (row.status === AttendanceStatus.LATE) acc[key].lateDays += 1;
+    if (row.status === AttendanceStatus.ABSENT) acc[key].absentDays += 1;
+    acc[key].workedMinutes += row.workedMinutes;
+    acc[key].lateMinutes += row.lateMinutes;
+    acc[key].overtimeMinutes += calculateOvertimeMinutes(row.employee.shift, row.workedMinutes);
+    return acc;
+  }, {});
+
+  const totalWorkedMinutes = timesheets.reduce((s, t) => s + t.workedMinutes, 0);
+  const totalLateMinutes = timesheets.reduce((s, t) => s + t.lateMinutes, 0);
+  const totalOvertimeMinutes = timesheets.reduce(
+    (s, t) => s + calculateOvertimeMinutes(t.employee.shift, t.workedMinutes),
+    0
+  );
+
+  return {
+    weekStart: start,
+    weekEnd: end,
+    summary: {
+      present: countPresentStatuses(timesheets),
+      late: timesheets.filter((t) => t.status === AttendanceStatus.LATE).length,
+      absent: timesheets.filter((t) => t.status === AttendanceStatus.ABSENT).length,
+      totalWorkedMinutes,
+      totalLateMinutes,
+      totalOvertimeMinutes
+    },
+    byEmployee: Object.values(byEmployee).sort((a, b) => b.workedMinutes - a.workedMinutes),
+    dailyRows: buildTimesheetCsvRows(timesheets),
+    timesheets
+  };
 }
 
 export function statusTone(status: AttendanceStatus) {

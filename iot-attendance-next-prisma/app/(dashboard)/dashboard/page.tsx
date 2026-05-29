@@ -74,15 +74,15 @@ export default async function DashboardPage() {
         description="Today’s workforce coverage, device heartbeat, approval pressure, and exception risk in one operating view."
         aside={
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-[1.6rem] bg-slate-950 px-4 py-4 text-white">
-              <p className="text-xs uppercase tracking-[0.25em] text-sky-200">Coverage</p>
-              <p className="mt-2 text-3xl font-black">{activeEmployees === 0 ? 0 : Math.round((present / activeEmployees) * 100)}%</p>
-              <p className="text-sm text-slate-300">Checked in or worked today</p>
+            <div className="rounded-xl border border-gold-200 bg-gold-500/10 px-4 py-4">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-gold-300">Coverage</p>
+              <p className="mt-2 text-3xl font-black text-white">{activeEmployees === 0 ? 0 : Math.round((present / activeEmployees) * 100)}%</p>
+              <p className="text-sm text-brand-300">Checked in or worked today</p>
             </div>
-            <div className="rounded-[1.6rem] bg-white px-4 py-4 ring-1 ring-slate-200">
-              <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Open sessions</p>
-              <p className="mt-2 text-3xl font-black text-slate-950">{pendingCheckout}</p>
-              <p className="text-sm text-slate-500">Employees without checkout</p>
+            <div className="rounded-xl border border-white/10 bg-white/10 px-4 py-4">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-brand-300">Open sessions</p>
+              <p className="mt-2 text-3xl font-black text-white">{pendingCheckout}</p>
+              <p className="text-sm text-brand-300">Employees without checkout</p>
             </div>
           </div>
         }
